@@ -3,37 +3,65 @@ import requests
 import cv2
 import numpy as np
 import os
-import time
-from io import BytesIO
 
 # ضع التوكن الخاص بك هنا
 API_TOKEN = '1471297967:AAHbNyIFVc5hP9t8XrzUBUbi0UV3T5d3x_o'
 bot = telebot.TeleBot(API_TOKEN)
 
-def generate_image(prompt):
-    """توليد صورة من الذكاء الاصطناعي وإعادتها كـ NumPy array لـ OpenCV"""
+def get_image(prompt):
+    # رابط مباشر ومستقر لتوليد الصور
     url = f"https://image.pollinations.ai/prompt/{prompt}?width=512&height=512&nologo=true"
     try:
         response = requests.get(url, timeout=30)
         if response.status_code == 200:
-            # تحويل البيانات القادمة من الرابط مباشرة لمصفوفة صور يفهمها OpenCV
             nparr = np.frombuffer(response.content, np.uint8)
-            img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-            return img
-    except Exception as e:
-        print(f"Error generating image: {e}")
+            return cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    except:
+        return None
     return None
 
-def create_fusion_video(img1, img2, img_final, output_path):
-    """صنع فيديو مع تأثير تلاشي (Fade) احترافي"""
-    size = (512, 512)
-    fps = 24
-    fade_frames = 20  # عدد الإطارات في لحظة التحول
-    hold_frames = 30  # مدة بقاء كل صورة ثابتة
-    
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    out = cv2.VideoWriter(output_path, fourcc, fps, size)
+@bot.message_handler(commands=['start'])
+def start(message):
+    bot.reply_to(message, "🔥 أهلاً بك! أرسل اسمين بالإنجليزية لدمجهما في فيديو تحول أسطوري.\nمثال: Lion Eagle")
 
+@bot.message_handler(func=lambda message: True)
+def handle_fusion(message):
+    words = message.text.split()
+    if len(words) < 2:
+        bot.reply_to(message, "⚠️ من فضلك أرسل كلمتين.")
+        return
+
+    chat_id = message.chat.id
+    obj1, obj2 = words[0], words[1]
+    status = bot.reply_to(message, "⚙️ جاري العمل في المختبر...")
+
+    # توليد الصور الثلاث
+    img1 = get_image(obj1)
+    img2 = get_image(obj2)
+    img_final = get_image(f"mystical hybrid fusion of {obj1} and {obj2}")
+
+    if img1 is not None and img2 is not None and img_final is not None:
+        video_path = f"fusion_{chat_id}.mp4"
+        
+        # إعداد الفيديو
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        out = cv2.VideoWriter(video_path, fourcc, 20.0, (512, 512))
+        
+        # دمج الصور في الفيديو مع تأثير بسيط
+        frames = [img1, img2, img_final]
+        for f in frames:
+            for _ in range(40): out.write(cv2.resize(f, (512, 512)))
+            
+        out.release()
+        
+        with open(video_path, 'rb') as v:
+            bot.send_video(chat_id, v, caption="✅ اكتمل التحول!")
+        
+        os.remove(video_path)
+    else:
+        bot.reply_to(message, "❌ فشل التوليد، جرب كلمات أبسط.")
+
+bot.infinity_polling()
     images = [img1, img2, img_final]
     
     for i in range(len(images)):
