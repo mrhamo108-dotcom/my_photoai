@@ -3,37 +3,64 @@ import requests
 import cv2
 import numpy as np
 import os
+from http.server import BaseHTTPRequestHandler, HTTPServer
+import threading
 
-# ضع التوكن الخاص بك هنا
-API_TOKEN = '1471297967:AAHbNyIFVc5hP9t8XrzUBUbi0UV3T5d3x_o'
+# 1. إعداد خادم ويب وهمي لإرضاء منصة Koyeb
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is running!")
+
+def run_health_server():
+    server = HTTPServer(('0.0.0.0', 8080), HealthCheckHandler)
+    server.serve_forever()
+
+# 2. إعدادات بوت تليجرام
+API_TOKEN = '1436657438:AAFFChQdjDNvlvhOwPHo7Rrm83U7NiTJHaA' # ضع التوكن هنا
 bot = telebot.TeleBot(API_TOKEN)
 
 def get_image(prompt):
-    # رابط مباشر ومستقر لتوليد الصور
     url = f"https://image.pollinations.ai/prompt/{prompt}?width=512&height=512&nologo=true"
     try:
         response = requests.get(url, timeout=30)
         if response.status_code == 200:
             nparr = np.frombuffer(response.content, np.uint8)
             return cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-    except:
-        return None
+    except: return None
     return None
 
-@bot.message_handler(commands=['start'])
-def start(message):
-    bot.reply_to(message, "🔥 أهلاً بك! أرسل اسمين بالإنجليزية لدمجهما في فيديو تحول أسطوري.\nمثال: Lion Eagle")
+@bot.message_handler(func=lambda m: True)
+def handle(m):
+    words = m.text.split()
+    if len(words) < 2: return
+    
+    chat_id = m.chat.id
+    status = bot.reply_to(m, "🧬 جاري معالجة الكائنات...")
+    
+    i1, i2 = get_image(words[0]), get_image(words[1])
+    i3 = get_image(f"hybrid of {words[0]} and {words[1]}, detailed")
 
-@bot.message_handler(func=lambda message: True)
-def handle_fusion(message):
-    words = message.text.split()
-    if len(words) < 2:
-        bot.reply_to(message, "⚠️ من فضلك أرسل كلمتين.")
-        return
+    if i1 is not None and i3 is not None:
+        video = f"v_{chat_id}.mp4"
+        out = cv2.VideoWriter(video, cv2.VideoWriter_fourcc(*'mp4v'), 20, (512, 512))
+        for img in [i1, i2 if i2 is not None else i1, i3]:
+            for _ in range(40): out.write(cv2.resize(img, (512, 512)))
+        out.release()
+        
+        with open(video, 'rb') as v:
+            bot.send_video(chat_id, v, caption="✅ تم التحول!")
+        os.remove(video)
+    else:
+        bot.reply_to(m, "❌ فشل التوليد، جرب كلمات أخرى.")
 
-    chat_id = message.chat.id
-    obj1, obj2 = words[0], words[1]
-    status = bot.reply_to(message, "⚙️ جاري العمل في المختبر...")
+# 3. تشغيل الخادم والبوت معاً
+if __name__ == "__main__":
+    # تشغيل خادم الصحة في Thread منفصل
+    threading.Thread(target=run_health_server, daemon=True).start()
+    print("Bot started...")
+    bot.infinity_polling()
 
     # توليد الصور الثلاث
     img1 = get_image(obj1)
